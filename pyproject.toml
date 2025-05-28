@@ -43,7 +43,7 @@ classifiers = [
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-py-modules = ["adafruit_rfm9x"]
+py-modules = ["adafruit_rfm9x", "simulated_rfm9x", "simulated_server"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

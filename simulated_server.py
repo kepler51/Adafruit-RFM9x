@@ -607,6 +607,7 @@ class SimulatorServer:
         """
         self.shutdown()
 
+    # In simulated_server.py, modify the _handle_client method:
     def _handle_client(self, conn, addr):
         """
         Handle communication from a single simulated LoRa node.
@@ -622,12 +623,14 @@ class SimulatorServer:
         logging.info(f"[+] Connected from {addr}")
         node_id = None
         conn.settimeout(None)
+        
         try:
             for line in conn_file:
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                    
                 if msg["type"] == "register":
                     node_id = msg["node_id"]
                     location = tuple(msg.get("location", (0, 0)))
@@ -637,18 +640,50 @@ class SimulatorServer:
                         self.node_locations[node_id] = location
                         self.node_frequency[node_id] = frequency
                     logging.info(f"[+] RFM9x Node {node_id} registered at {location} with frequency: {frequency}")
+                    
                 elif msg["type"] == "tx":
                     self._process_transmission(msg)
+                    
+                elif msg["type"] == "disconnect":  # New disconnect message type
+                    logging.info(f"[-] Node {node_id} disconnecting gracefully")
+                    break
+                    
+        except ConnectionResetError:
+            # This happens when client forcibly closes connection
+            logging.info(f"[-] Node {node_id} disconnected (connection reset)")
+        except socket.error as e:
+            # Handle other socket errors
+            logging.info(f"[-] Node {node_id} disconnected (socket error: {e})")
+        except Exception as e:
+            # Catch any other unexpected errors
+            logging.error(f"[-] Error handling client {node_id}: {e}")
         finally:
+            # Clean up the connection
             if node_id:
                 with self.lock:
                     self.clients.pop(node_id, None)
+                    self.node_locations.pop(node_id, None)
+                    self.node_frequency.pop(node_id, None)
+            
+            # Close the connection file handle
+            try:
+                conn_file.close()
+            except:
+                pass
+                
+            # Shutdown and close the socket
             try:
                 conn.shutdown(socket.SHUT_RDWR)
             except:
                 pass
-            conn.close()
-            logging.info(f"[-] Node {node_id} disconnected")
+                
+            try:
+                conn.close()
+            except:
+                pass
+                
+            if node_id:
+                logging.info(f"[-] Node {node_id} cleanup complete")
 
     def _process_transmission(self, msg):
         """
@@ -666,6 +701,8 @@ class SimulatorServer:
         Args:
             msg (dict): Transmission message from sender.
         """
+        import base64
+
         meta = msg.get("meta", {})
         from_id = msg.get("from")
         to_id = meta.get("destination")
@@ -679,6 +716,16 @@ class SimulatorServer:
         min_snr, max_snr = SF_SNR_RANGES.get(sf, (-20, 5.0))
         sender_freq = self.node_frequency.get(from_id)
 
+        # Handle binary data
+        data_str = msg.get("data", "")
+        is_binary = msg.get("is_binary", False)
+        
+        if is_binary:
+            # For binary data, we need to get the actual byte length
+            payload_len = len(base64.b64decode(data_str))
+        else:
+            payload_len = len(data_str)
+    
         self.active_transmissions += 1
         try:
             if to_id != 0xFF:
@@ -744,7 +791,7 @@ class SimulatorServer:
                 # Deliver message to receiver
                 try:
                     client_sock.sendall((json.dumps(msg) + '\n').encode())
-                    logging.info(f"[✓] Delivered packet from {from_id} to {nid} | "
+                    logging.info(f"[OK] Delivered packet from {from_id} to {nid} | "
                             f"RSSI: {rssi:.2f} dBm | SNR: {snr:.2f} dB | "
                             f"SF: {sf} | Distance: {distance_km:.2f} km | Delay: {delay_ms:.2f} ms")
                 except Exception as e:
@@ -794,7 +841,7 @@ class SimulatorServer:
             self.server_socket.close()
         except:
             pass
-        logging.info("[✓] Server shutdown complete.")
+        logging.info("[OK] Server shutdown complete.")
         sys.exit(0)
 
 

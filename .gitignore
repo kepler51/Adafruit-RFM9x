@@ -26,7 +26,7 @@
 *.mpy
 
 build/
-
+*.log
 # Python-specific files
 __pycache__
 *.pyc

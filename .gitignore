@@ -25,6 +25,8 @@
 # CircuitPython-specific files
 *.mpy
 
+build/
+*.log
 # Python-specific files
 __pycache__
 *.pyc
